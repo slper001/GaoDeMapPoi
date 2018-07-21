@@ -1,0 +1,72 @@
+import requests
+from urllib.parse import urlencode
+import json
+import pandas as pd
+
+search_item = '学校'
+# 深圳的高德城市代号是440300
+city_num = 440300
+# search_item是你想搜索的POI选项，可更改，例如酒店啥的都行
+
+'''
+get_page_index是为了获取页面返回结果
+'''
+def get_page_index(city_num,search_item,page_num):
+    data = {
+        'query_type':'TQUERY',
+        'pagesize': 20,
+        'pagenum':page_num,
+        'qii':'true',
+        'cluster_state':5,
+        'need_utd':'true',
+        'utd_sceneid':1000,
+        'div':'PC1000',
+        'addr_poi_merge':'true',
+        'is_classify':'true',
+        'zoom':17,
+        'city':city_num,
+        'rf':0,
+        'keywords':search_item
+    }
+    url = 'http://ditu.amap.com/service/poiInfo?' + urlencode(data)
+    response = requests.get(url)
+    try:
+        if response.status_code == 200:
+            return response.text
+        return None
+    except Exception as e:
+        print('获取Json页面出错', e)
+'''
+parse_page是为了解析get_page_index返回结果，从而获取想要的字段
+'''
+def parse_page(jsop_page):
+    data = json.loads(jsop_page)
+    if data.get('data').get('poi_list') is None:
+        return None
+    names, addresss, latitudes, longitudes, tels = [], [], [], [], []
+    for item in data.get('data').get('poi_list'):
+        name = item.get('name')
+        address = item.get('address')
+        latitude = item.get('latitude')
+        longitude = item.get('longitude')
+        tel = item.get('tel')
+        names.append(name)
+        addresss.append(address)
+        latitudes.append(latitude)
+        longitudes.append(longitude)
+        tels.append(tel)
+    return names, addresss, latitudes, longitudes, tels
+def main():
+    result = pd.DataFrame()
+    # 这里设置为46是因为，高德地图最多只提供45页结果,而且某些搜索POI是不存在tel这个字段的
+    for page_num in range(1, 46):
+        json_page = get_page_index(city_num, search_item, page_num)
+        print('正在获取第%d页信息' % page_num)
+        if parse_page(json_page) is None:
+            break
+        name, address, latitude, longitude, tel = parse_page(json_page)
+        one_page_info = pd.DataFrame({'名称': name, '地址': address, '维度': latitude, '经度': longitude, '电话': tel})
+        result = result.append(one_page_info, ignore_index=True)
+    result.to_csv('%s.csv' % search_item, index=False)
+if __name__ == '__main__':
+    main()
